@@ -1,0 +1,237 @@
+
+import "AudioMonitor_Shared.ksp"
+
+
+on init 
+	message(" ")
+	AUDIOMONITOR.init
+
+	declare const UI_HEIGHT  := 300
+	declare const UI_WIDTH := 633
+	declare const UI_OFFSET_X := 80
+	set_ui_height_px(UI_HEIGHT)
+	set_ui_width_px(UI_WIDTH)
+	
+	declare AUDIOMONITOR.UI.AudioRouting.width := 100 
+	declare AUDIOMONITOR.UI.AudioRouting.hspacing := 20
+	declare AUDIOMONITOR.UI.AudioRouting.vspacing := 25
+	declare AUDIOMONITOR.UI.AudioRouting.Menu.height := 20
+
+	declare AUDIOMONITOR.a  
+	declare AUDIOMONITOR.b
+	declare AUDIOMONITOR.c 
+	declare AUDIOMONITOR.d
+
+	declare pers ui_menu AUDIOMONITOR.UI.MENU.Events[AUDIOMONITOR.CONFIG.maxITEMS] 
+	iterate_macro(AUDIOMONITOR.UI.MENU.Events_CONFIGURE) := 0 to AUDIOMONITOR.CONFIG.maxITEMS - 1
+
+	declare pers ui_menu AUDIOMONITOR.UI.MENU.Groups[AUDIOMONITOR.CONFIG.maxITEMS] 
+	iterate_macro(AUDIOMONITOR.UI.MENU.Groups_CONFIGURE) := 0 to AUDIOMONITOR.CONFIG.maxITEMS - 1
+
+	declare pers ui_menu AUDIOMONITOR.UI.MENU.Variables[AUDIOMONITOR.CONFIG.maxITEMS] 
+	iterate_macro(AUDIOMONITOR.UI.MENU.Variables_CONFIGURE) := 0 to AUDIOMONITOR.CONFIG.maxITEMS - 1
+
+	declare pers ui_menu AUDIOMONITOR.UI.MENU.Outputs[AUDIOMONITOR.CONFIG.maxITEMS] 
+	iterate_macro(AUDIOMONITOR.UI.MENU.Outputs_CONFIGURE) := 0 to AUDIOMONITOR.CONFIG.maxITEMS - 1
+
+	pgs_create_key(PSG_AUDIOMONITOR_ROUTING, AUDIOMONITOR_PSG_ARRSIZE) 
+
+end on
+
+on persistence_changed 
+	iterate_macro(AUDIOMONITOR.PostInitPSG) := 0 to AUDIOMONITOR.CONFIG.maxITEMS - 1
+end on
+
+
+macro AUDIOMONITOR.PostInitPSG(#n#)	
+	message("=============AUDIOMONITOR.PostInitPSG=================")
+	pgs_set_key_val(PSG_AUDIOMONITOR_ROUTING, #n# * AUDIOMONITOR_ELEMENTSperITEM, AUDIOMONITOR.UI.MENU.Events#n#) 
+	pgs_set_key_val(PSG_AUDIOMONITOR_ROUTING, #n# * AUDIOMONITOR_ELEMENTSperITEM + 1, AUDIOMONITOR.UI.MENU.Groups#n#) 
+	pgs_set_key_val(PSG_AUDIOMONITOR_ROUTING, #n# * AUDIOMONITOR_ELEMENTSperITEM + 2, AUDIOMONITOR.UI.MENU.Variables#n#)
+	pgs_set_key_val(PSG_AUDIOMONITOR_ROUTING, #n# * AUDIOMONITOR_ELEMENTSperITEM + 3, AUDIOMONITOR.UI.MENU.Outputs#n#) 
+
+	for AUDIOMONITOR.i := 0 to num_elements(AUDIOMONITOR.UI.MENU.Groups) - 1
+		set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Groups[#n#],AUDIOMONITOR.i,0) // reset
+	end for
+
+	if AUDIOMONITOR.UI.MENU.Events#n# = 0 
+		pgs_set_key_val(PSG_AUDIOMONITOR_ROUTING, #n# * AUDIOMONITOR_ELEMENTSperITEM + 2, -1) // no variable
+
+		set_control_par(AUDIOMONITOR.UI.MENU.Groups[#n#], CONTROL_PAR_HIDE, HIDE_WHOLE_CONTROL)
+		set_control_par(AUDIOMONITOR.UI.MENU.Variables[#n#], CONTROL_PAR_HIDE, HIDE_WHOLE_CONTROL)
+		set_control_par(AUDIOMONITOR.UI.MENU.Outputs[#n#], CONTROL_PAR_HIDE, HIDE_WHOLE_CONTROL)
+	else 
+		set_control_par(AUDIOMONITOR.UI.MENU.Groups[#n#], CONTROL_PAR_HIDE, HIDE_PART_NOTHING)
+		set_control_par(AUDIOMONITOR.UI.MENU.Outputs[#n#], CONTROL_PAR_HIDE, HIDE_PART_NOTHING)		
+		for AUDIOMONITOR.i := 0 to num_elements(AUDIOMONITOR.CONFIG.Groups) - 1
+			set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Groups[#n#],AUDIOMONITOR.i,0) // reset
+		end for
+		//ADD  MARKERS  when the selected event is NOT "ALWAYS"
+		if AUDIOMONITOR.UI.MENU.Events#n# # AUDIOMONITOR.ENUM.ALWAYS
+			for AUDIOMONITOR.i := 0 to num_elements(AUDIOMONITOR.Group.Markers) - 1	
+				set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Groups[#n#],AUDIOMONITOR.i,1)
+			end for 
+		end if 
+		//ADD 0dBfs (LINES)
+		for AUDIOMONITOR.i := 0 to AUDIOMONITOR.Group.Lines.SIZE - 1
+			message("postInitPSG. enabling " & !AUDIOMONITOR.CONFIG.Groups[AUDIOMONITOR.ENUM.Line_POS_A + AUDIOMONITOR.i])
+			set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Groups[#n#],AUDIOMONITOR.ENUM.Line_POS_A + AUDIOMONITOR.i,1)
+		end for
+
+		if AUDIOMONITOR.UI.MENU.Groups#n# >= AUDIOMONITOR.ENUM.Line_POS_A and AUDIOMONITOR.UI.MENU.Groups#n# <= AUDIOMONITOR.ENUM.Line_NEG_B
+			message("dovrebbe attivarsi menu variables!")
+			set_control_par(AUDIOMONITOR.UI.MENU.Variables[#n#], CONTROL_PAR_HIDE, HIDE_PART_NOTHING)
+			for AUDIOMONITOR.i := 0 to AUDIOMONITOR_ELEMENTSperITEM - 1		
+				set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Variables[#n#],AUDIOMONITOR.i,1)
+			end for
+		else 
+			pgs_set_key_val(PSG_AUDIOMONITOR_ROUTING, #n# * AUDIOMONITOR_ELEMENTSperITEM + 2, -1) // no variable
+		end if
+
+		// ADD external (ie instrumental) groups only when the selected event is "ALWAYS"
+		if AUDIOMONITOR.UI.MENU.Events#n# = AUDIOMONITOR.ENUM.ALWAYS
+			set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Groups[#n#],AUDIOMONITOR.ENUM.Sound_A,1)
+			set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Groups[#n#],AUDIOMONITOR.ENUM.Sound_B,1)
+		end if
+	end if
+end macro 
+
+
+macro AUDIOMONITOR.UI.MENU.Events_CONFIGURE(#n#)
+	for AUDIOMONITOR.i:= 0 to num_elements(AUDIOMONITOR.CONFIG.Events) - 1
+    	add_menu_item(AUDIOMONITOR.UI.MENU.Events#n#, AUDIOMONITOR.CONFIG.Events[AUDIOMONITOR.i], AUDIOMONITOR.i)
+    end for
+    AUDIOMONITOR.a := (UI_WIDTH - UI_OFFSET_X - 5) / (AUDIOMONITOR.UI.AudioRouting.width+AUDIOMONITOR.UI.AudioRouting.hspacing) // quanti menu in una fila
+    AUDIOMONITOR.b := ((UI_WIDTH - UI_OFFSET_X - 5) - AUDIOMONITOR.a*(AUDIOMONITOR.UI.AudioRouting.width+AUDIOMONITOR.UI.AudioRouting.hspacing)) / AUDIOMONITOR.a // centrare spazio
+    AUDIOMONITOR.c := #n# mod AUDIOMONITOR.a // conta orizzontale
+    AUDIOMONITOR.d := #n# / AUDIOMONITOR.a // quante colonne
+    set_bounds(AUDIOMONITOR.UI.MENU.Events[#n#], UI_OFFSET_X + AUDIOMONITOR.c*(AUDIOMONITOR.UI.AudioRouting.width+AUDIOMONITOR.UI.AudioRouting.hspacing+AUDIOMONITOR.b), 5 + AUDIOMONITOR.d*((15+AUDIOMONITOR.UI.AudioRouting.Menu.height)*AUDIOMONITOR_ELEMENTSperITEM), AUDIOMONITOR.UI.AudioRouting.width, AUDIOMONITOR.UI.AudioRouting.Menu.height)
+	set_control_par(AUDIOMONITOR.UI.MENU.Events[#n#],$CONTROL_PAR_TEXT_ALIGNMENT,1)
+end macro
+	
+macro AUDIOMONITOR.UI.MENU.Groups_CONFIGURE(#n#)
+	for AUDIOMONITOR.i:= 0 to num_elements(AUDIOMONITOR.CONFIG.Groups) - 1
+    	add_menu_item(AUDIOMONITOR.UI.MENU.Groups#n#, AUDIOMONITOR.CONFIG.Groups[AUDIOMONITOR.i], AUDIOMONITOR.i)
+    end for
+    AUDIOMONITOR.a := (UI_WIDTH - UI_OFFSET_X - 5) / (AUDIOMONITOR.UI.AudioRouting.width+AUDIOMONITOR.UI.AudioRouting.hspacing) // quanti menu in una fila
+    AUDIOMONITOR.b := ((UI_WIDTH - UI_OFFSET_X - 5) - AUDIOMONITOR.a*(AUDIOMONITOR.UI.AudioRouting.width+AUDIOMONITOR.UI.AudioRouting.hspacing)) / AUDIOMONITOR.a // centrare spazio
+    AUDIOMONITOR.c := #n# mod AUDIOMONITOR.a // conta orizzontale
+    AUDIOMONITOR.d := #n# / AUDIOMONITOR.a // conta verticale
+    set_bounds(AUDIOMONITOR.UI.MENU.Groups[#n#], UI_OFFSET_X + AUDIOMONITOR.c*(AUDIOMONITOR.UI.AudioRouting.width+AUDIOMONITOR.UI.AudioRouting.hspacing+AUDIOMONITOR.b), 5 + AUDIOMONITOR.d*((15+AUDIOMONITOR.UI.AudioRouting.Menu.height)*AUDIOMONITOR_ELEMENTSperITEM) + AUDIOMONITOR.UI.AudioRouting.vspacing, AUDIOMONITOR.UI.AudioRouting.width, AUDIOMONITOR.UI.AudioRouting.Menu.height)
+	set_control_par(AUDIOMONITOR.UI.MENU.Groups[#n#],$CONTROL_PAR_TEXT_ALIGNMENT,1)
+end macro
+
+macro AUDIOMONITOR.UI.MENU.Variables_CONFIGURE(#n#)
+	for AUDIOMONITOR.i:= 0 to num_elements(AUDIOMONITOR.CONFIG.Variables) - 1
+    	add_menu_item(AUDIOMONITOR.UI.MENU.Variables#n#, AUDIOMONITOR.CONFIG.Variables[AUDIOMONITOR.i], AUDIOMONITOR.i)
+    end for
+    AUDIOMONITOR.a := (UI_WIDTH - UI_OFFSET_X - 5) / (AUDIOMONITOR.UI.AudioRouting.width+AUDIOMONITOR.UI.AudioRouting.hspacing) // quanti menu in una fila
+    AUDIOMONITOR.b := ((UI_WIDTH - UI_OFFSET_X - 5) - AUDIOMONITOR.a*(AUDIOMONITOR.UI.AudioRouting.width+AUDIOMONITOR.UI.AudioRouting.hspacing)) / AUDIOMONITOR.a // centrare spazio
+    AUDIOMONITOR.c := #n# mod AUDIOMONITOR.a // conta orizzontale
+    AUDIOMONITOR.d := #n# / AUDIOMONITOR.a // conta verticale
+    set_bounds(AUDIOMONITOR.UI.MENU.Variables[#n#], UI_OFFSET_X + AUDIOMONITOR.c*(AUDIOMONITOR.UI.AudioRouting.width+AUDIOMONITOR.UI.AudioRouting.hspacing+AUDIOMONITOR.b), 5 + AUDIOMONITOR.d*((15+AUDIOMONITOR.UI.AudioRouting.Menu.height)*AUDIOMONITOR_ELEMENTSperITEM) + AUDIOMONITOR.UI.AudioRouting.vspacing*2, AUDIOMONITOR.UI.AudioRouting.width, AUDIOMONITOR.UI.AudioRouting.Menu.height)
+	set_control_par(AUDIOMONITOR.UI.MENU.Variables[#n#],$CONTROL_PAR_TEXT_ALIGNMENT,1)
+end macro
+
+macro AUDIOMONITOR.UI.MENU.Outputs_CONFIGURE(#n#)
+	for AUDIOMONITOR.i:= 0 to 7
+    	add_menu_item(AUDIOMONITOR.UI.MENU.Outputs#n#, AUDIOMONITOR.CONFIG.Outputs[AUDIOMONITOR.i], AUDIOMONITOR.i)
+    end for
+    AUDIOMONITOR.a := (UI_WIDTH - UI_OFFSET_X - 5) / (AUDIOMONITOR.UI.AudioRouting.width+AUDIOMONITOR.UI.AudioRouting.hspacing) // quanti menu in una fila
+    AUDIOMONITOR.b := ((UI_WIDTH - UI_OFFSET_X - 5) - AUDIOMONITOR.a*(AUDIOMONITOR.UI.AudioRouting.width+AUDIOMONITOR.UI.AudioRouting.hspacing)) / AUDIOMONITOR.a // centrare spazio
+    AUDIOMONITOR.c := #n# mod AUDIOMONITOR.a // conta orizzontale
+    AUDIOMONITOR.d := #n# / AUDIOMONITOR.a // conta verticale
+    set_bounds(AUDIOMONITOR.UI.MENU.Outputs[#n#], UI_OFFSET_X + AUDIOMONITOR.c*(AUDIOMONITOR.UI.AudioRouting.width+AUDIOMONITOR.UI.AudioRouting.hspacing+AUDIOMONITOR.b), 5 + AUDIOMONITOR.d*((15+AUDIOMONITOR.UI.AudioRouting.Menu.height)*AUDIOMONITOR_ELEMENTSperITEM) + AUDIOMONITOR.UI.AudioRouting.vspacing*3, AUDIOMONITOR.UI.AudioRouting.width, AUDIOMONITOR.UI.AudioRouting.Menu.height)
+	set_control_par(AUDIOMONITOR.UI.MENU.Outputs[#n#],$CONTROL_PAR_TEXT_ALIGNMENT,1)
+end macro
+
+macro AUDIOMONITOR.SetEvents(#n#)
+	on ui_control(AUDIOMONITOR.UI.MENU.Events#n#)
+
+		if AUDIOMONITOR.CONFIG.PRINT = 1 
+			message("Item n. " & #n# & " , event: " & !AUDIOMONITOR.CONFIG.Events[AUDIOMONITOR.UI.MENU.Events#n#])
+		end if
+		for AUDIOMONITOR.i := 0 to num_elements(AUDIOMONITOR.UI.MENU.Groups) - 1
+			set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Groups[#n#],AUDIOMONITOR.i,0) // reset
+		end for
+
+		pgs_set_key_val(PSG_AUDIOMONITOR_ROUTING, #n# * AUDIOMONITOR_ELEMENTSperITEM, AUDIOMONITOR.UI.MENU.Events#n#) 
+
+		if AUDIOMONITOR.UI.MENU.Events#n# = 0 
+			set_control_par(AUDIOMONITOR.UI.MENU.Groups[#n#], CONTROL_PAR_HIDE, HIDE_WHOLE_CONTROL)
+			set_control_par(AUDIOMONITOR.UI.MENU.Variables[#n#], CONTROL_PAR_HIDE, HIDE_WHOLE_CONTROL)
+			set_control_par(AUDIOMONITOR.UI.MENU.Outputs[#n#], CONTROL_PAR_HIDE, HIDE_WHOLE_CONTROL)
+		else 
+			set_control_par(AUDIOMONITOR.UI.MENU.Groups[#n#], CONTROL_PAR_HIDE, HIDE_PART_NOTHING)
+			set_control_par(AUDIOMONITOR.UI.MENU.Outputs[#n#], CONTROL_PAR_HIDE, HIDE_PART_NOTHING)		
+			for AUDIOMONITOR.i := 0 to num_elements(AUDIOMONITOR.CONFIG.Groups) - 1
+				set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Groups[#n#],AUDIOMONITOR.i,0) // reset
+			end for
+			//ADD  MARKERS  when the selected event is NOT "ALWAYS"
+			if AUDIOMONITOR.UI.MENU.Events#n# # AUDIOMONITOR.ENUM.ALWAYS
+				for AUDIOMONITOR.i := 0 to num_elements(AUDIOMONITOR.Group.Markers) - 1
+					message("visible marker in menu : " & AUDIOMONITOR.Group.Markers[AUDIOMONITOR.i])
+					set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Groups[#n#],AUDIOMONITOR.i,1)
+				end for 
+			end if 
+			//ADD 0dBfs (LINES)
+			for AUDIOMONITOR.i := 0 to AUDIOMONITOR.Group.Lines.SIZE - 1
+				message("SetEvents. enabling " & AUDIOMONITOR.ENUM.Line_POS_A + AUDIOMONITOR.i)
+				set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Groups[#n#],AUDIOMONITOR.ENUM.Line_POS_A + AUDIOMONITOR.i,1)
+			end for
+
+			if AUDIOMONITOR.UI.MENU.Groups#n# >= AUDIOMONITOR.ENUM.Line_POS_A and AUDIOMONITOR.UI.MENU.Groups#n# <= AUDIOMONITOR.ENUM.Line_NEG_B
+				set_control_par(AUDIOMONITOR.UI.MENU.Variables[#n#], CONTROL_PAR_HIDE, HIDE_PART_NOTHING)
+				for AUDIOMONITOR.i := 0 to AUDIOMONITOR_ELEMENTSperITEM - 1		
+					message("SetEvents. enabling " & AUDIOMONITOR.UI.MENU.Variables[AUDIOMONITOR.i])
+					set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Variables[#n#],AUDIOMONITOR.i,1)
+				end for
+			else 
+				set_control_par(AUDIOMONITOR.UI.MENU.Variables[#n#], CONTROL_PAR_HIDE, HIDE_WHOLE_CONTROL)
+			end if
+
+			// ADD external (ie instrumental) groups only when the selected event is "ALWAYS"
+			if AUDIOMONITOR.UI.MENU.Events#n# = AUDIOMONITOR.ENUM.ALWAYS
+				set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Groups[#n#],AUDIOMONITOR.ENUM.Sound_A,1)
+				set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Groups[#n#],AUDIOMONITOR.ENUM.Sound_B,1)
+			end if
+		end if
+	end on
+end macro
+iterate_macro(AUDIOMONITOR.SetEvents) := 0 to AUDIOMONITOR.CONFIG.maxITEMS - 1 
+
+
+macro AUDIOMONITOR.SetGroups(#n#)
+    on ui_control(AUDIOMONITOR.UI.MENU.Groups#n#)
+    	message("selected group: " & AUDIOMONITOR.UI.MENU.Groups#n#)
+     	pgs_set_key_val(PSG_AUDIOMONITOR_ROUTING, #n# * AUDIOMONITOR_ELEMENTSperITEM + 1, AUDIOMONITOR.UI.MENU.Groups#n#) 
+
+     	if AUDIOMONITOR.UI.MENU.Groups#n# >= AUDIOMONITOR.ENUM.Line_POS_A and AUDIOMONITOR.UI.MENU.Groups#n# <= AUDIOMONITOR.ENUM.Line_NEG_B
+			message("dovrebbe attivarsi menu variables!")
+			set_control_par(AUDIOMONITOR.UI.MENU.Variables[#n#], CONTROL_PAR_HIDE, HIDE_PART_NOTHING)
+			for AUDIOMONITOR.i := 0 to AUDIOMONITOR_ELEMENTSperITEM - 1		
+				message("SetEvents. enabling " & AUDIOMONITOR.UI.MENU.Variables[AUDIOMONITOR.i])
+				set_menu_item_visibility(AUDIOMONITOR.UI.MENU.Variables[#n#],AUDIOMONITOR.i,1)
+			end for
+		else 
+			set_control_par(AUDIOMONITOR.UI.MENU.Variables[#n#], CONTROL_PAR_HIDE, HIDE_WHOLE_CONTROL)
+			pgs_set_key_val(PSG_AUDIOMONITOR_ROUTING, #n# * AUDIOMONITOR_ELEMENTSperITEM + 2, -1)
+			message("levati dal cazzo menu variables!")
+		end if
+    end on
+end macro
+iterate_macro(AUDIOMONITOR.SetGroups) := 0 to AUDIOMONITOR.CONFIG.maxITEMS - 1
+
+macro AUDIOMONITOR.SetVariables(#n#) 
+    on ui_control(AUDIOMONITOR.UI.MENU.Variables#n#)
+     	pgs_set_key_val(PSG_AUDIOMONITOR_ROUTING, #n# * AUDIOMONITOR_ELEMENTSperITEM + 2, AUDIOMONITOR.UI.MENU.Variables#n#)       
+    end on
+end macro
+iterate_macro(AUDIOMONITOR.SetVariables) := 0 to AUDIOMONITOR.CONFIG.maxITEMS - 1
+
+macro AUDIOMONITOR.SetBuses(#n#) 
+    on ui_control(AUDIOMONITOR.UI.MENU.Outputs#n#)
+     	pgs_set_key_val(PSG_AUDIOMONITOR_ROUTING, #n# * AUDIOMONITOR_ELEMENTSperITEM + 3, AUDIOMONITOR.UI.MENU.Outputs#n#)       
+    end on
+end macro
+iterate_macro(AUDIOMONITOR.SetBuses) := 0 to AUDIOMONITOR.CONFIG.maxITEMS - 1

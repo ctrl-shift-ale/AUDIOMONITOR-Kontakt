@@ -1,0 +1,604 @@
+///////////////////////////////////////////////////////////////
+// SCRIPT USER SETUP
+///////////////////////////////////////////////////////////////
+
+define AUDIOMONITOR.active := TRUE
+define PRINT.SVsync := TRUE // TRUE if you want to monitor the signal vector syncing process via Creator Tools's KSP Log
+define PRINT.noteSync := TRUE // TRUE if you want to monitor the note syncing process via Creator Tools's KSP Log
+define TICK.STANDARD := 2000 // the standard duration of a while NOTE_HELD loop
+define SR := 48000 // sample rate of the audio device
+define SV.minSize := 4 // minimum size of the signal vector that might be used by the audio device
+define SV.maxSize := 8192 //  minimum size of the signal vector that might be used by the audio device
+define GHOST.midiNote := 0 // midi location of the ghost group in the provided demo instrument 
+define SAMPLE.freq := 220 // frequency of the audio content which is goint to be synced in the provided demo instrument 
+define GHOST.group := "ghost" // name of the ghost group in the provided demo instrument 
+define SOUND_A.group := "Sound A" // name of the group panned all left in the provided demo instrument 
+define SOUND_B.group := "Sound B" // name of the group panned all right in the provided demo instrument 
+
+///////////////////////////////////////////////////////////////
+
+import "AudioMonitor_Shared.ksp"
+on init 
+	AUDIOMONITOR.init
+
+	///////////////////////////////////////////////////////////////
+	// CONST VARIABLES
+	///////////////////////////////////////////////////////////////
+	declare const MAXINT := 2147483647
+	declare const MININT := -2147483648
+	declare const SEC := 1000000 
+	declare const OFF := 0 
+	declare const ON := 1 
+	declare const NULL := -1 
+	declare const FALSE := 0
+	declare const TRUE := 1
+
+	///////////////////////////////////////////////////////////////
+	// ENUM VARIABLES
+	///////////////////////////////////////////////////////////////
+	declare ENUM.SVsync.status.INIT := 0 
+	declare ENUM.SVsync.status.VECTORSIZE := 1 
+	declare ENUM.SVsync.status.FIRSTSYNCING := 2
+	declare ENUM.SVsync.status.SYNCING := 3
+	declare ENUM.SVsync.status.FIRSTPENDING := 4
+	declare ENUM.SVsync.status.PENDING := 5
+	declare ENUM.SVsync.status.REFRESHED := 6
+	declare ENUM.SVsync.status.UNSYNCED := 7
+
+	declare ENUM.noteSync.status.OFF := 0
+	declare ENUM.noteSync.status.TRIGGERED := 1
+	declare ENUM.noteSync.status.DONE := 2
+	///////////////////////////////////////////////////////////////
+
+	family NOTE 
+		declare cnt := 0 // this variable counts the amount of active notes (when counter > 1 then a note sync is triggered)
+		declare ids[128] // this array contains the ids of the active notes 
+		declare ghost.id := NULL 
+	end family
+
+	family TICK  
+		declare sampleFile := SEC / SR // duration (in usec) of an audio sample accordig to the audio sample rate
+		declare shortest := SEC / (SR / SV.minSize) // duration (in usec) of shortest signal vector size possible 
+		declare longest := SEC / (SR / SV.maxSize) // duration (in usec) of longest signal vector size possible 
+		declare noteHeld :=  TICK.STANDARD // init value
+	end family
+	family ~TICK 
+		declare sampleFile_r := int_to_real(SEC) / int_to_real(SR) 
+	end family
+
+	family SVSYNC 
+		declare status 
+		declare status.his 
+	 	declare SVsize 
+	 	declare SVdur 
+	 	declare SVdur_smp
+	 	declare initOfst
+	 	declare vectorTimer // this accum resets every time the NOTE_HELD while loop is synchronised with the signal vector
+	 	
+	 	declare vectorsCnt // counts the amount of vectors. This variable is used to showcase the functionalities of AUDIOMONITOR 
+	 	AUDIOMONITOR.Set.Variable.Min(SVSYNC.vectorsCnt, 0)
+		AUDIOMONITOR.Set.Variable.Max(SVSYNC.vectorsCnt, 49) // this way SVSYINC.vectorsCnt resets to 0 every 50 vectors.
+
+
+	 	declare countdown 
+	 	declare standardTick_floor {	this variable represents the duration of the NOTE_HELD while loop following the synchronisation to the signal vector
+	 	 								In order to make the script less CPU intensive, and assuming that constant synchronisation to each signal vector is not necessary, 
+	 	 								the script will synchronise only once every amount of time determined by TICK.STANDARD under normal circumstances, that is,
+	 	 								when a note syncing is NOT undergoing }
+	 	family sizeCheck 
+			declare status 
+			declare pos
+			declare pos.his
+		end family
+	end family
+	family ~SVSYNC 
+		declare SVdur_r
+	end family
+
+	family NOTESYNC  
+		declare status 
+	end family
+
+	declare val
+	declare pos 
+	declare min 
+	declare max 
+	declare i 
+	declare PSG_i
+
+	declare THISNOTE.idx
+	declare ~SAMPLE.cycleDur_r := int_to_real(SEC) / int_to_real(SAMPLE.freq)
+
+end on
+
+on note 
+
+
+{ ~~~~~~ CHECK NEW NOTE - MASTER OR SLAVE ? ~~~~~~ }
+	disallow_group(ALL_GROUPS) 
+	ignore_event(EVENT_ID)	// all notes are triggered by the script 
+
+	i := 0 
+	while(i < num_elements(NOTE.ids) and NOTE.ids[i] # 0)
+		inc(i)
+	end while
+	THISNOTE.idx := i
+	if THISNOTE.idx = 0 // master note
+		SVSYNC.status := ENUM.SVsync.status.INIT 
+		SVSYNC.status.his := NULL // reset
+		SVSYNC.vectorTimer := 0 //reset
+		SVSYNC.vectorsCnt := 0 //reset
+	else // slave
+		SVSYNC.vectorTimer := SVSYNC.vectorTimer - TICK.noteHeld // if a slave note on event is triggered, then SVSYNC.vectorTimer has to revert back to its previous value
+	end if
+
+	///////////////////////////
+	// AUDIOMONITOR
+	// Since SVSYNC.vectorTimer is one of the variables we want to monitor (via AUDIOMONITOR), we have to refresh the AUDIOMONITOR.VariablesData array each time SVSYNC.vectorTimer changes its value
+	if AUDIOMONITOR.active = TRUE 
+		AUDIOMONITOR.Set.Variable.Val(SVSYNC.vectorTimer)
+		AUDIOMONITOR.Set.Variable.Min(SVSYNC.vectorTimer , 0)
+		AUDIOMONITOR.Set.Variable.Max(SVSYNC.vectorTimer , 0) // by setting max := min , AUDIOMONITOR will skip monitoring the variable until min and max have different values (which, in the case of this variable, will happen when the SV duration will be known)
+	end if
+	//\\\\\\\\\\\\\\\\\\\\\\\\\
+
+	if PRINT.noteSync = TRUE
+		message("NOTESYNC: number of notes already being played is " & i)
+	end if
+
+
+	///////////////////////////////////////////////////////////////
+	// the note is MASTER =>
+	//		1. play the "ghost note" which will be use to determine the refresh rate of get_event_par(#ghostNote_id,EVENT_PAR_PLAY_POS)
+	//		2. calculate the signal vector size according to the audio sample rate and the refresh rate of get_event_par(#ghostNote_id,EVENT_PAR_PLAY_POS)
+	//		3. synchronise the NOTE_HELD loop with the signal vector. This will allow the script to get the exact reading position of a zone (audio file / buffer) with the smallest margin of error (sample level)
+	//
+	// the note is SLAVE =>
+	//		1. wait until the script gets the exact reading position of the zone (audio file / buffer) triggered by the master note
+	//		2. play the slave note with a certain amount of position offset in order to synchronise it to the master note (as the two notes use the same audio sample, the two audio signals will be on phase)
+	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+	if THISNOTE.idx = 0 // if it's the master note
+		{MASTER 1.}
+		NOTESYNC.status := ENUM.noteSync.status.OFF // no sync with any slave note 
+		play(THISNOTE.idx,0) //this note triggers group @CONFIG.group.name.sinLeft 
+
+		////////////////////////////
+		// AUDIOMONITOR
+		// let AUDIOMONITOR check at the beginning of a note whether there's any variable which has to be constantly monitored
+		if AUDIOMONITOR.active = TRUE 
+			AUDIOMONITOR.Event.Check(AUDIOMONITOR.ENUM.ALWAYS)		
+		end if
+	else // it's a slave note
+		NOTESYNC.status := ENUM.noteSync.status.TRIGGERED // the script is going to defer the playing of the slave note in order to synchronise it with the master note		
+	end if
+{ ~~~~~~ END OF CHECK NEW NOTE - MASTER OR SLAVE ? ~~~~~~ }
+
+{ ~~~~~~ DETERMINE SIGNAL VECTOR SIZE ~~~~~~ }
+	if SVSYNC.status = ENUM.SVsync.status.INIT // => check signal vector size, then syncronise the NOTE_HELD loops with the signal vector
+		SVSYNC.status.his := SVSYNC.status
+		SVSYNC.status := ENUM.SVsync.status.VECTORSIZE // assuming that the user might have changed the audio settings while no note on event was active, we are going to check the SV size each time a master note on event happens
+		if PRINT.SVsync = TRUE
+			message("SV_SYNC STATUS IS: DETERMINE VECTOR SIZE")
+		end if 
+		////////////////////////////
+		// AUDIOMONITOR
+		// add the following block whenever a change of status might require AUDIOMONITOR to check whether something needs to be triggered
+		if AUDIOMONITOR.active = TRUE and SVSYNC.status.his # SVSYNC.status
+			AUDIOMONITOR.Event.Check(AUDIOMONITOR.ENUM.SVSYNC_VECTORSIZE)
+			//AUDIOMONITOR.Markers.Play()
+		end if
+		//\\\\\\\\\\\\\\\\\\\\\\\\\
+
+		{reset}
+			SVSYNC.sizeCheck.pos.his := NULL
+	    	NOTE.ghost.id := NULL     	
+	    	SVSYNC.sizeCheck.pos := 0
+			SVSYNC.sizeCheck.pos.his := 0
+			SVSYNC.vectorTimer := 0
+
+		{call function}
+			play_ghost() //this note triggers group @CONFIG.string.ghostGroup
+	end if		
+{ ~~~~~~ END OF DETERMINE SIGNAL VECTOR SIZE ~~~~~~ }
+
+	while NOTE_HELD = ON 
+		TICK.noteHeld := TICK.STANDARD // init TICK.noteHeld to standard value. This might change for synchronising purposes
+
+{ ~~~~~~ CHECK SVSYNC STATUS ~~~~~~}	
+		if SVSYNC.status.his = ENUM.SVsync.status.REFRESHED // it's not synced any longer
+	   		SVSYNC.status := ENUM.SVsync.status.UNSYNCED
+	   		if PRINT.SVsync = TRUE
+				message(" SV_SYNC STATUS IS: UNSYNCED")
+			end if
+
+			////////////////////////////
+			// AUDIOMONITOR
+			// add the following block whenever a change of status might require AUDIOMONITOR to check whether something needs to be triggered
+			if AUDIOMONITOR.active = TRUE 
+				AUDIOMONITOR.Event.Check(AUDIOMONITOR.ENUM.SVSYNC_UNSYNCED) 
+			end if
+			//\\\\\\\\\\\\\\\\\\\\\\\\\
+
+	   	end if
+{ ~~~~~~ END OF CHECK SVSYNC STATUS ~~~~~~}
+
+	
+{ ~~~~~~ CHECK SIGVEC DUR (APPLIES TO MASTER NOTE ONLY) ~~~~~~ }
+		if SVSYNC.status = ENUM.SVsync.status.VECTORSIZE // check the vector size (init note)		
+			if PRINT.SVsync = TRUE and SVSYNC.status.his = ENUM.SVsync.status.INIT
+				message(" SVSYNC STATUS IS: checking SV")
+			end if
+
+
+			SVSYNC.status.his := ENUM.SVsync.status.VECTORSIZE
+			TICK.noteHeld := TICK.shortest
+	      	SVsync_vectorCheck()	
+	      	////////////////////////////
+			// set the range of SVSYNC.vectorTimer as we now know the SV size/duration
+			if AUDIOMONITOR.active = TRUE and SVSYNC.status = ENUM.SVsync.status.FIRSTSYNCING
+				AUDIOMONITOR.Set.Variable.Max(SVSYNC.vectorTimer, SVSYNC.SVdur)
+			end if
+			//\\\\\\\\\\\\\\\\\\\\\\\\\
+	   	end if
+{ ~~~~~~ END OF CHECK SIGVEC DUR (APPLIES TO MASTER NOTE ONLY) ~~~~~~ }
+			
+{ ~~~~~~ SYNCING FOLLOWING SYNC PREPPING ~~~~~~ }
+		if SVSYNC.status = ENUM.SVsync.status.FIRSTPENDING or SVSYNC.status = ENUM.SVsync.status.PENDING 			 		
+			SVsync_Syncing()	
+			if PRINT.SVsync = TRUE
+				message(" SV_SYNC STATUS IS: REFRESHED")
+			end if
+
+			///////////////////////////
+			// AUDIOMONITOR VARIABLE DEMO
+			if AUDIOMONITOR.active = TRUE 
+				inc(SVSYNC.vectorsCnt)
+				wrap(SVSYNC.vectorsCnt,0,49)
+				AUDIOMONITOR.Set.Variable.Val(SVSYNC.vectorsCnt)
+			end if
+			//\\\\\\\\\\\\\\\\\\\\\\\\\
+
+			////////////////////////////
+			// AUDIOMONITOR
+			// add the following block whenever you want to have a the possibility of having an audio marker played by the AudioMonitor script
+			if AUDIOMONITOR.active = TRUE and SVSYNC.status.his # SVSYNC.status
+				AUDIOMONITOR.Event.Check(AUDIOMONITOR.ENUM.SVSYNC_SYNCED)
+				//AUDIOMONITOR.Markers.Play()
+			end if
+			//\\\\\\\\\\\\\\\\\\\\\\\\\
+
+			TICK.noteHeld := TICK.STANDARD			
+		end if
+{ ~~~~~~ END OF SYNCING FOLLOWING SYNC PREPPING ~~~~~~ }
+
+
+{ ~~~~~~ PLAY SYNCED NOTE ~~~~~~ }
+		if SVSYNC.status = ENUM.SVsync.status.REFRESHED  
+			if NOTESYNC.status = ENUM.noteSync.status.TRIGGERED
+				i := 0
+				while i < num_elements(NOTE.ids) and NOTE.ids[i] = 0 // find master note and its current reading position (this NOTE_HELD loop is synced to SV therefore reading position is accurate)
+					inc(i)
+				end while
+				pos := get_event_par(NOTE.ids[i],EVENT_PAR_PLAY_POS)
+				if PRINT.noteSync = TRUE
+					message(" ######## NOTESYNC TRIGGERED. pos of note idx " & i & " is " & pos)
+				end if
+				play(THISNOTE.idx,pos) // play secondary note with an offset which will make it on phase with the audio from the master note
+				NOTESYNC.status := ENUM.noteSync.status.DONE
+				if PRINT.noteSync = TRUE
+					message("NOTESYNC: note triggered via script. ID: " & NOTE.ids[i])
+				end if
+			end if
+		end if 
+{ ~~~~~~ END OF PLAY SYNCED NOTE ~~~~~~ }			
+		
+{ ~~~~~~ TRIGGER SYNC PREPPING ~~~~~~ }	
+		if SVSYNC.status >= ENUM.SVsync.status.VECTORSIZE
+			if SVSYNC.status >= ENUM.SVsync.status.FIRSTSYNCING
+				if SVSYNC.vectorTimer + TICK.noteHeld > SVSYNC.standardTick_floor
+					SVSYNC.status.his := SVSYNC.status
+					SVSYNC.status := ENUM.SVsync.status.SYNCING 
+					SVsync_SyncingPrep() // this function is going to change the value of TICK.noteHeld
+				end if
+			end if 
+			SVSYNC.vectorTimer := SVSYNC.vectorTimer + TICK.noteHeld
+			///////////////////////////
+			// AUDIOMONITOR
+			// Since SVSYNC.vectorTimer is one of the variables we want AUDIOMONITOR to monitor, we have to refresh the AUDIOMONITOR.VariablesData array whenever SVSYNC.vectorTimer changes its value
+			if AUDIOMONITOR.active = TRUE 
+				AUDIOMONITOR.Set.Variable.Val(SVSYNC.vectorTimer)
+			end if
+			//\\\\\\\\\\\\\\\\\\\\\\\\\
+		end if
+{ ~~~~~~ END OF TRIGGER SYNC PREPPING ~~~~~~ }
+
+{ ~~~~~~ AUDIOMONITOR NOTE HELD CHECK~~~~~~ }
+		///////////////////////////
+		// This block has to be added to the NOTE_HELD loop only if there are variables that AUDIOMONITOR monitors
+		if AUDIOMONITOR.NoteHeld = TRUE 
+			AUDIOMONITOR.NoteHeld.Check()
+			{ UPDATE HISTORY }
+			for AUDIOMONITOR.i := 0 to AUDIOMONITOR.VariablesData.SIZE_D1 - 1
+				AUDIOMONITOR.VariablesData_his[AUDIOMONITOR.i] := AUDIOMONITOR.VariablesData[AUDIOMONITOR.i,0]
+			end for
+		end if
+		//\\\\\\\\\\\\\\\\\\\\\\\\\
+{ ~~~~~~ END OF AUDIOMONITOR NOTE HELD CHECK~~~~~~ }
+
+		//SVSYNC.status.his := SVSYNC.status
+		if TICK.noteHeld <= 0 
+			TICK.noteHeld := 1
+		end if
+		wait(TICK.noteHeld)		
+	end while 
+end on  
+
+on release 
+{ ~~~~~~ REFRESH NOTE.ids ~~~~~~ }		
+	i := 0
+	NOTE.cnt := 0
+	while i < num_elements(NOTE.ids)
+		if NOTE.ids[i] # 0
+		 	inc(NOTE.cnt)
+			if NOTE.ids[i] = EVENT_ID
+				NOTE.ids[i] := 0
+				dec(NOTE.cnt)
+				i := num_elements(NOTE.ids) // break loop
+			end if 
+		end if 
+		inc(i)
+	end while	
+{ ~~~~~~ END OF REFRESH NOTE.ids ~~~~~~ }
+end on
+
+on pgs_changed 	
+{ ~~~~~~ AUDIOMONITOR PSG ~~~~~~ }
+	set_array(AUDIOMONITOR.Psg.Events, NULL)
+	set_array(AUDIOMONITOR.Psg.Groups, NULL) 
+	set_array(AUDIOMONITOR.Psg.Variables, NULL)
+	set_array(AUDIOMONITOR.Psg.Outputs, NULL)
+	
+	AUDIOMONITOR.NoteHeld := OFF
+	if pgs_key_exists(PSG_AUDIOMONITOR_ROUTING)
+		for PSG_i := 0 to num_elements(AUDIOMONITOR.Psg.Groups) - 1
+			AUDIOMONITOR.Psg.Events[PSG_i] := pgs_get_key_val(PSG_AUDIOMONITOR_ROUTING,PSG_i*4)
+			if AUDIOMONITOR.Psg.Events[PSG_i] # 0 // bus is on
+				AUDIOMONITOR.Psg.Groups[PSG_i] := pgs_get_key_val(PSG_AUDIOMONITOR_ROUTING,PSG_i*4 + 1)
+				AUDIOMONITOR.Psg.Variables[PSG_i] := pgs_get_key_val(PSG_AUDIOMONITOR_ROUTING,PSG_i*4 + 2)
+				AUDIOMONITOR.Psg.Outputs[PSG_i] := pgs_get_key_val(PSG_AUDIOMONITOR_ROUTING,PSG_i*4 + 3)
+				if AUDIOMONITOR.CONFIG.PRINT = TRUE
+					message("_-_-_-_-_-_-_-_-_-_- pgs_changed (AUDIOMONITOR) _-_-_-_-_-_-_-_-_-_-")
+					message(" -	Item: " & PSG_i)
+					message(" - Event: " & !AUDIOMONITOR.CONFIG.Events[AUDIOMONITOR.Psg.Events[PSG_i]])
+					message(" - Group: " & !AUDIOMONITOR.CONFIG.Groups[AUDIOMONITOR.Psg.Groups[PSG_i]])
+					if AUDIOMONITOR.Psg.Variables[PSG_i] # -1
+						message(" - Variable: " & !AUDIOMONITOR.CONFIG.Variables[AUDIOMONITOR.Psg.Variables[PSG_i]])
+					end if
+					message(" - Output: " & !AUDIOMONITOR.CONFIG.Outputs[AUDIOMONITOR.Psg.Outputs[PSG_i]])
+					message("_-_-_-_-_-_-_-_-_-_-")
+				end if
+				if AUDIOMONITOR.Psg.Variables[PSG_i] # -1 // REFRESH VARIABLESDATA ARRAY AND ACTIVATE FUNCTION IN NOTE_HELD LOOP
+					AUDIOMONITOR.VariablesData[AUDIOMONITOR.Psg.Variables[PSG_i],3] := AUDIOMONITOR.Psg.Groups[PSG_i] - num_elements(AUDIOMONITOR.Group.Markers) // LINE groups follow the Markers group (see list AUDIOMONITOR.CONFIG.Groups)
+					AUDIOMONITOR.VariablesData[AUDIOMONITOR.Psg.Variables[PSG_i],0] := 0 
+					AUDIOMONITOR.VariablesData_his[AUDIOMONITOR.Psg.Variables[PSG_i]] := NULL 
+					//message("INDEX GROUP FOR VARIABLE: " & AUDIOMONITOR.Psg.Groups[PSG_i] &  " - " &  num_elements(AUDIOMONITOR.Group.Markers))
+					AUDIOMONITOR.NoteHeld := TRUE
+				end if
+			end if
+		end for
+	end if 
+{ ~~~~~~ END OF AUDIOMONITOR PSG ~~~~~~ }
+end on
+
+
+function play_ghost() // this function triggers a silent audio sample in Kontakt used for calculating what sample vector size Kontaks is running on  
+	if NOTE.ghost.id = NULL 		
+		disallow_group(ALL_GROUPS)
+	    NOTE.ghost.id := play_note(GHOST.midiNote, 1, 0, -1)
+		change_tune(NOTE.ghost.id, 0, 0) // make sure audio file's reading speed is 1
+		set_event_par_arr(NOTE.ghost.id, EVENT_PAR_ALLOW_GROUP, ON, find_group(GHOST.group))		
+	end if
+end function
+
+function SVsync_vectorCheck() // THIS FUNCTION CHECKS THE CURRENT SIGNAL VECTOR SIZE .. WARNING: THIS FUNCTION IS COMPUTING INTENSIVE AS IT NECESSITATES TO BE CALLED AT THE MINIMUM VECTOR SIZE AVAILABLE RATE
+	declare deltaMin 
+	declare vSize 
+	
+	if NOTE.ghost.id # NULL // make sure the "ghost" note is on
+    	SVSYNC.sizeCheck.pos := get_event_par(NOTE.ghost.id,EVENT_PAR_PLAY_POS)	    	    	
+		if SVSYNC.sizeCheck.pos.his = 0 // get_event_par hasn't put out a value > 0 yet
+			SVSYNC.sizeCheck.pos.his := SVSYNC.sizeCheck.pos
+		else if SVSYNC.sizeCheck.pos.his # SVSYNC.sizeCheck.pos
+			
+	        SVSYNC.SVdur := SVSYNC.sizeCheck.pos - SVSYNC.sizeCheck.pos.his
+	        SVSYNC.SVdur_smp := real_to_int(int_to_real(SVSYNC.SVdur) / ~TICK.sampleFile_r)
+	        deltaMin := MAXINT
+	        vSize := SV.maxSize
+	        while vSize >= SV.minSize
+				if abs(SVSYNC.SVdur_smp - vSize) <= deltaMin
+					deltaMin := abs(SVSYNC.SVdur_smp - vSize)
+					SVSYNC.SVsize := vSize
+					vSize := vSize / 2
+				else  
+					vSize := NULL // break loop
+				end if
+				
+			end while 
+							
+			~SVSYNC.SVdur_r := int_to_real(SEC)/(int_to_real(SR)/int_to_real(SVSYNC.SVsize))
+			SVSYNC.SVdur := real_to_int(floor(~SVSYNC.SVdur_r))
+			i := 1
+			while SVSYNC.SVdur * i < TICK.STANDARD 
+				inc(i)
+			end while
+			SVSYNC.standardTick_floor := real_to_int(floor(~SVSYNC.SVdur_r * int_to_real(i)))
+			SVSYNC.SVdur_smp := real_to_int(~SVSYNC.SVdur_r / ~TICK.sampleFile_r) 
+	        SVSYNC.initOfst := SVSYNC.vectorTimer - SVSYNC.sizeCheck.pos  
+	        SVSYNC.vectorTimer := SVSYNC.initOfst
+	        
+	        SVSYNC.status := ENUM.SVsync.status.FIRSTSYNCING
+          	
+        	if PRINT.SVsync = TRUE
+        		message("~~~~~~ FUNCTION SVsync_vectorCheck")
+				message("	SVSYNC.vectorTimer IS " & SVSYNC.vectorTimer)
+				message("	Last PlayPos: " & SVSYNC.sizeCheck.pos)
+				message("	SVSYNC.standardTick_floor: " & SVSYNC.standardTick_floor)
+				message("	SV dur and size : " & ~SVSYNC.SVdur_r & "(" & SVSYNC.SVdur_smp & " samples) , " & SVSYNC.SVsize)
+				message("	VS refresh initial offset: " & SVSYNC.initOfst)
+				message("	SVSYNC is now FIRSTSYNCING")
+				message("	++++++ PLEASE NOTE WE ARE NOT SYNCED TO SV YET ++++++")
+				message("~~~~~~ END FUNCTION SVsync_vectorCheck")
+				
+			end if
+		end if
+	end if
+end function
+
+function SVsync_SyncingPrep() 
+	declare ~val_r
+	declare val
+	declare test
+	declare time
+	if PRINT.SVsync = TRUE
+		message(" ~~~~~~~ FUNCTION SVsync_SyncingPrep ")
+		message("	VECTOR TIMER = " & SVSYNC.vectorTimer)
+		message("	SV dur and sample size : " & ~SVSYNC.SVdur_r  & " , " & SVSYNC.SVsize)
+	end if
+
+	if SVSYNC.status = ENUM.SVsync.status.SYNCING // normal synchronisation aims at a margin of error of half audio sample ( = less computational intense than the first synchronisation)
+		message("	 SYNCING  ")
+		SVSYNC.countdown := SVSYNC.standardTick_floor - SVSYNC.vectorTimer - TICK.sampleFile //(TICK.sampleFile / 2)
+	else if SVSYNC.status = ENUM.SVsync.status.FIRSTSYNCING // first synchronisation aims at a margin of error of a few microseconds ( = more computational intense than the normal synchronisations)
+		message("	 FIRSTSYNCING  ")
+		SVSYNC.countdown := SVSYNC.SVdur - SVSYNC.vectorTimer + 1
+	end if
+	if PRINT.SVsync = TRUE
+		message("	SVSYNC.countdown = " & SVSYNC.countdown & ". Next sync with SV should happen at  SVSYNC.vectorTimer = " &  SVSYNC.vectorTimer + SVSYNC.countdown )
+	end if
+
+	if SVSYNC.countdown < 0
+		SVSYNC.countdown := 0
+	end if 		
+	SVSYNC.sizeCheck.pos.his := get_event_par(NOTE.ghost.id,EVENT_PAR_PLAY_POS) // update SVSYNC.sizeCheck.pos.his , which is going to be used in the function
+	
+	TICK.noteHeld := SVSYNC.countdown 
+	if PRINT.SVsync = TRUE
+		message("		next TICK.noteHeld to SYNC: " & TICK.noteHeld )
+	end if
+	
+	SVSYNC.status.his := SVSYNC.status
+	if SVSYNC.status = ENUM.SVsync.status.SYNCING
+		SVSYNC.status := ENUM.SVsync.status.PENDING 
+	else if SVSYNC.status = ENUM.SVsync.status.FIRSTSYNCING
+		SVSYNC.status := ENUM.SVsync.status.FIRSTPENDING 
+	end if 
+	if PRINT.SVsync = TRUE
+		message("		ENUM.SVsync.status.PENDING. TICK.noteHeld NEW VALUE for SYNCING: " & TICK.noteHeld)
+		message(" ~~~~~~~ END Function SVsync_SyncingPrep ")
+	end if
+end function
+
+function SVsync_Syncing() 
+	if PRINT.SVsync = TRUE
+		message("	~~~~~~~ FUNCTION SVsync_Syncing")
+		message("	THISNOTE.idx is " & THISNOTE.idx)
+		message(" 		Previous VS pos: " & SVSYNC.sizeCheck.pos.his & " , SVSYNC.vectorTimer: " & SVSYNC.vectorTimer )
+	end if
+	declare safetyCnt := 0
+	declare error := FALSE
+	
+	SVSYNC.sizeCheck.pos := get_event_par(NOTE.ghost.id,EVENT_PAR_PLAY_POS)
+	message(" 		Last VS pos: " & SVSYNC.sizeCheck.pos & " , SVSYNC.vectorTimer: " & SVSYNC.vectorTimer )
+	if SVSYNC.sizeCheck.pos = SVSYNC.sizeCheck.pos.his
+		message("		SVSYNC SYNC CHECK. EVENT_PAR_POS QUERIED TOO EARLY") 
+	   message("		VECTOR TIMER: " & SVSYNC.vectorTimer )
+	   
+		while 	SVSYNC.sizeCheck.pos = SVSYNC.sizeCheck.pos.his
+		  	if SVSYNC.status = ENUM.SVSYNC.status.FIRSTPENDING 
+	    		wait(1)
+	    		inc(safetyCnt)
+	    		
+	    	else if SVSYNC.status = ENUM.SVsync.status.PENDING
+	    		wait(TICK.sampleFile /2)
+	    		safetyCnt := safetyCnt + (TICK.sampleFile /2)
+	    		SVSYNC.vectorTimer := SVSYNC.vectorTimer + (TICK.sampleFile /2)
+	    	end if 
+	    	SVSYNC.sizeCheck.pos := get_event_par(NOTE.ghost.id,EVENT_PAR_PLAY_POS)
+
+	    	if SVSYNC.sizeCheck.pos = SVSYNC.sizeCheck.pos.his and safetyCnt > SVSYNC.SVdur // safety measure to avoid freezes
+	    		message(" ========== ERROR. CAN'T SYNC TO SIGNAL VECTOR ==========")
+	    		error := TRUE 
+	    		inc(SVSYNC.sizeCheck.pos)	// break while loop even if kontakt engine hasn't refreshed SVSYNC.sizeCheck.pos 
+	    	end if	    		    	
+	   	end while
+	   	SVSYNC.vectorTimer := 0
+	   	if error = TRUE 
+	   		dec(SVSYNC.sizeCheck.pos)
+	   	else
+	   		if PRINT.SVsync = TRUE
+	   			message("	SVSYNC. SYNCED TO SV AFTER " & safetyCnt & " uSEC")
+	   		end if 
+	   	end if 
+	else 
+		if PRINT.SVsync = TRUE
+			message("	!!!! SVSYNC. WE ARE EITHER SYNCED OR RUNNING LATE")
+		end if 
+	end if
+		
+	SVSYNC.status.his := SVSYNC.status
+	SVSYNC.status := ENUM.SVsync.status.REFRESHED
+	//SVSYNC_note(OFF)
+
+   if PRINT.SVsync = TRUE
+		message("	~~~~~~~ END Function SVsync_Syncing")
+	end if
+end function
+
+function play(idx,offset)
+	NOTE.ids[idx] := play_note(EVENT_NOTE, 127, offset, -1)
+	disallow_group(ALL_GROUPS)
+	if idx mod 2 = 0
+		set_event_par_arr(NOTE.ids[idx], EVENT_PAR_ALLOW_GROUP, ON, find_group(SOUND_A.group))
+	else  
+		set_event_par_arr(NOTE.ids[idx], EVENT_PAR_ALLOW_GROUP, ON, find_group(SOUND_B.group))			
+	end if		
+end function
+
+function append(val,array,empty_sym)
+	array[search(array,empty_sym)] := val 
+end function
+
+function set_array(arr,val)
+	declare i 
+	for i := 0 to num_elements(arr) - 1	
+		arr[i] := val	
+	end for
+end function 
+
+function set_2darray(arr,val)
+	declare i 
+	declare j
+	for i := 0 to arr.SIZE_D1 - 1
+		for j := 0 to arr.SIZE_D2 - 1
+			arr[i,j] := val	
+		end for 
+	end for
+end function 
+
+function disallow_all_groups(id)
+		declare i 
+		for i := 0 to NUM_GROUPS - 1
+			set_event_par_arr(id,EVENT_PAR_ALLOW_GROUP,0,i)
+		end for
+	end function
+
+function wrap(var,min,max)
+	if var > max 
+		var := min 
+	else if var < min 
+		var := min 
+	end if
+end function
+
+AUDIOMONITOR.functions

@@ -1,0 +1,319 @@
+
+//define AUDIOMONITOR.Set.Variable.Val(#var_name#) := AUDIOMONITOR.VariablesData[AUDIOMONITOR.ENUM.#var_name#,0] :=  #var_name#
+//define AUDIOMONITOR.Set.Variable.Min(#var_name# , #min#) := AUDIOMONITOR.VariablesData[AUDIOMONITOR.ENUM.#var_name#,1] :=  #min#
+//define AUDIOMONITOR.Set.Variable.Max(#var_name# , #max#) := AUDIOMONITOR.VariablesData[AUDIOMONITOR.ENUM.#var_name#,2] :=  #max#
+
+	////////////////////////////////////
+	// Call AUDIOMONITOR.getBusDefault() during the initialisation of your script in order to be able to revert back to the instrument's default bus routing configuration
+	// at any time by using the function AUDIOMONITOR.setBusDefault() //
+	////////////////////////////////////
+	function AUDIOMONITOR.getBusDefault()
+		AUDIOMONITOR.set_array(AUDIOMONITOR.BUS.Default,-1)
+		for AUDIOMONITOR.i := 0 to NUM_GROUPS - 1
+			AUDIOMONITOR.BUS.Default[AUDIOMONITOR.i] := get_engine_par(ENGINE_PAR_OUTPUT_CHANNEL, AUDIOMONITOR.i, -1, -1)
+		end for
+	end function
+
+	////////////////////////////////////
+	// See comment above - function AUDIOMONITOR.getBusDefault() //
+	////////////////////////////////////
+	function AUDIOMONITOR.setBusDefault() //AUDIOMONITOR.BusReset
+		declare AUDIOMONITOR.i 
+		for AUDIOMONITOR.i := 0 to NUM_GROUPS - 1
+			set_engine_par(ENGINE_PAR_OUTPUT_CHANNEL, AUDIOMONITOR.BUS.Default[AUDIOMONITOR.i], AUDIOMONITOR.i, -1, -1)
+		end for
+	end function
+
+	////////////////////////////////////
+	// Call AUDIOMONITOR.Event.Check() any time your machine jumps to a new state to let the function check if there's any AudioMonitor group 
+	// which is going to be triggered (in the case of a marker) or re-routed (in the case of an instrument group) at this state.
+	////////////////////////////////////
+	function AUDIOMONITOR.Event.Check(event)  //AUDIOMONITOR.Section.Check
+		if AUDIOMONITOR.CONFIG.PRINT = 1
+			message("_-_-_-_-_- Function AUDIOMONITOR.Event.Check(" & !AUDIOMONITOR.CONFIG.Events[event] & ") -_-_-_-_-_")
+		end if
+		AUDIOMONITOR.set_array(AUDIOMONITOR.Current.Groups,-1)
+		AUDIOMONITOR.set_array(AUDIOMONITOR.Current.Variables,-999)
+		AUDIOMONITOR.set_array(AUDIOMONITOR.Current.Outputs,-1)
+
+		AUDIOMONITOR.Current.Event := event
+		for AUDIOMONITOR.i := 0 to num_elements(AUDIOMONITOR.Psg.Events) - 1
+			if AUDIOMONITOR.Psg.Events[AUDIOMONITOR.i] # 0 // event 0 -> OFF
+				if AUDIOMONITOR.Psg.Events[AUDIOMONITOR.i] = event
+					if AUDIOMONITOR.CONFIG.PRINT = 1
+						message("	found Group: " & !AUDIOMONITOR.CONFIG.Groups[AUDIOMONITOR.Psg.Groups[AUDIOMONITOR.i]])
+					end if 
+					AUDIOMONITOR.append(AUDIOMONITOR.Psg.Groups[AUDIOMONITOR.i],AUDIOMONITOR.Current.Groups,-1)
+					AUDIOMONITOR.append(AUDIOMONITOR.Psg.Variables[AUDIOMONITOR.i],AUDIOMONITOR.Current.Variables,-999) // Using -999 as -1 means (no variable)
+					AUDIOMONITOR.append(AUDIOMONITOR.Psg.Outputs[AUDIOMONITOR.i],AUDIOMONITOR.Current.Outputs,-1)
+				end if	
+			end if
+		end for
+		AUDIOMONITOR.Markers.Play() 
+		AUDIOMONITOR.Line.Play()
+	end function
+
+	function AUDIOMONITOR.NoteHeld.Check() // for Variables
+		if AUDIOMONITOR.CONFIG.PRINT = 1
+			message("_-_-_-_-_- Function AUDIOMONITOR.NoteHeld.Check -_-_-_-_-_")
+		end if
+		for AUDIOMONITOR.i := 0 to AUDIOMONITOR.VariablesData.SIZE_D1 - 1 // AUDIOMONITOR.VariablesData[varIdx][value, min, max, group]		
+			if AUDIOMONITOR.VariablesData[AUDIOMONITOR.i,3] # -1
+			 	//if (AUDIOMONITOR.VariablesData[AUDIOMONITOR.i,0] # AUDIOMONITOR.VariablesData_his[AUDIOMONITOR.i])
+					if AUDIOMONITOR.CONFIG.PRINT = 1
+						message("variable " & !AUDIOMONITOR.CONFIG.Variables[AUDIOMONITOR.i] & " = " & AUDIOMONITOR.VariablesData[AUDIOMONITOR.i,0]  & " - was " & AUDIOMONITOR.VariablesData_his[AUDIOMONITOR.i])
+					end if 
+					AUDIOMONITOR.Line.LinearScale(AUDIOMONITOR.i)
+				//end if
+			end if			
+		end for 
+	end function
+	////////////////////////////////////
+	// AUDIOMONITOR.Markers.Play() will play any marker linked to the current state
+	////////////////////////////////////
+	function AUDIOMONITOR.Markers.Play()
+		declare found_bool := FALSE
+		if AUDIOMONITOR.CONFIG.PRINT = 1
+			message("_-_-_-_-_- Function AUDIOMONITOR.Markers.Play, event: " & !AUDIOMONITOR.CONFIG.Events[AUDIOMONITOR.Current.Event] & " -_-_-_-_-_")
+		end if
+		for AUDIOMONITOR.i := 0 to num_elements(AUDIOMONITOR.Current.Groups) - 1
+			if in_range(AUDIOMONITOR.Current.Groups[AUDIOMONITOR.i], 0, num_elements(!AUDIOMONITOR.Group.Markers) - 1)
+				found_bool := TRUE
+				AUDIOMONITOR.group := find_group(!AUDIOMONITOR.Group.Markers[AUDIOMONITOR.Current.Groups[AUDIOMONITOR.i]])		
+				if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 0
+					AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.1.Left // weird digit because of NI_BUS_OFFSET
+				else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 1 		
+				  	AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.1.Right
+				else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 2
+				  	AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.2.Left // weird digit because of NI_BUS_OFFSET
+				 else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 3
+				  	AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.2.Right	
+				else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 4
+				  	AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.3.Left // weird digit because of NI_BUS_OFFSET
+				else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 5
+				  	AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.3.Right
+				else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 6 or  AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 7 // this is due to LIMITED NUMBERS OF BUS (0-15)
+					AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.4.Left 
+				end if	
+				if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] mod 2 = 0 // left
+			  		AUDIOMONITOR.pan := 0
+			  	else 
+			  		AUDIOMONITOR.pan := 1000000
+			  	end if 
+			  	set_engine_par(ENGINE_PAR_PAN, AUDIOMONITOR.pan, AUDIOMONITOR.group, -1, -1)
+				set_engine_par(ENGINE_PAR_OUTPUT_CHANNEL, AUDIOMONITOR.out, AUDIOMONITOR.group, -1, -1)		  	
+			  	set_engine_par(ENGINE_PAR_VOLUME,AUDIOMONITOR.ENGPAR_0dB,AUDIOMONITOR.group,-1,-1)
+				AUDIOMONITOR.id := play_note(AUDIOMONITOR.midi, 127, 0, -1)
+				AUDIOMONITOR.disallow_all_groups(AUDIOMONITOR.id)
+				set_event_par_arr(AUDIOMONITOR.id, EVENT_PAR_ALLOW_GROUP, ON, AUDIOMONITOR.group)
+				if AUDIOMONITOR.CONFIG.PRINT = 1
+					message(" TRIGGERED " & !AUDIOMONITOR.Group.Markers[AUDIOMONITOR.Current.Groups[AUDIOMONITOR.i]] ... 
+				 	& " IN SECTION " & !AUDIOMONITOR.CONFIG.Events[AUDIOMONITOR.Current.Event] & " TO " & output_channel_name((AUDIOMONITOR.out - NI_BUS_OFFSET)+1) ) 
+				end if 
+			end if
+		end for
+		if found_bool = FALSE and AUDIOMONITOR.CONFIG.PRINT = 1
+			message("	No Trigger Marker found for this event")
+		end if
+	end function
+
+
+	function AUDIOMONITOR.CustomGroups.Play(element,group_to_play,monitor_only)  
+		declare found_bool := FALSE
+		if AUDIOMONITOR.CONFIG.PRINT = 1
+			message("	search ELEMENT : " & !AUDIOMONITOR.CONFIG.Groups[element] & "(" & element &")")
+			message("	browse elements in AUDIOMONITOR.Current.Groups")
+		end if 
+		for AUDIOMONITOR.i := 0 to num_elements(AUDIOMONITOR.Current.Groups) - 1 
+			if AUDIOMONITOR.Current.Groups[AUDIOMONITOR.i] # NULL
+				if AUDIOMONITOR.Current.Groups[AUDIOMONITOR.i] = element 
+					found_bool := TRUE
+					if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = AUDIOMONITOR.ENUM.Aux.1.Left
+						if monitor_only = 1
+							AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.1.Left
+						else 
+							AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxRtrn.1.Left
+						end if 
+					else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = AUDIOMONITOR.ENUM.Aux.1.Right
+						if monitor_only = 1
+							AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.1.Right
+						else 
+							AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxRtrn.1.Right
+						end if
+					else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = AUDIOMONITOR.ENUM.Aux.2.Left
+						if monitor_only = 1
+							AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.2.Left
+						else 
+							AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxRtrn.2.Left
+						end if 
+					else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = AUDIOMONITOR.ENUM.Aux.2.Right
+						if monitor_only = 1
+							AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.2.Right
+						else 
+							AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxRtrn.2.Right
+						end if 
+					else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = AUDIOMONITOR.ENUM.Aux.3.Left
+						if monitor_only = 1
+							AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.3.Left
+						else 
+							AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxRtrn.3.Left
+						end if 
+					else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = AUDIOMONITOR.ENUM.Aux.3.Right
+						if monitor_only = 1
+							AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.3.Right
+						else 
+							AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxRtrn.3.Right
+						end if 
+					else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = AUDIOMONITOR.ENUM.Aux.4.Left or AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = AUDIOMONITOR.ENUM.Aux.4.Right
+						if monitor_only = 1
+							AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.4.Left
+						else 
+							AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxRtrn.4.Left
+						end if 
+					end if
+					if AUDIOMONITOR.CONFIG.PRINT = 1
+						message("	FOUND ELEMENT " & element & ". Group: " & group_name(group_to_play) & ". Output: " & output_channel_name(AUDIOMONITOR.out - NI_BUS_OFFSET) )
+					end if 
+					set_engine_par(ENGINE_PAR_OUTPUT_CHANNEL, AUDIOMONITOR.out, group_to_play, -1, -1)
+					set_engine_par(ENGINE_PAR_VOLUME, AUDIOMONITOR.ENGPAR_0dB, group_to_play,-1,-1)
+				end if 
+			end if 
+		end for	
+		
+		if found_bool = FALSE and AUDIOMONITOR.CONFIG.PRINT = 1
+			message("	NO ELEMENT FOUND FOR THIS SECTION AND TYPE.")
+		end if
+	end function
+
+	function AUDIOMONITOR.Line.Play()	
+		declare found_bool := FALSE
+		declare variableIdx
+		if AUDIOMONITOR.CONFIG.PRINT = 1
+			message("_-_-_-_-_- Function AUDIOMONITOR.Line.Play -_-_-_-_-_")
+		end if
+		for AUDIOMONITOR.i := 0 to num_elements(AUDIOMONITOR.Current.Groups) - 1
+			if in_range(AUDIOMONITOR.Current.Groups[AUDIOMONITOR.i], num_elements(!AUDIOMONITOR.Group.Markers) , num_elements(!AUDIOMONITOR.Group.Markers) + num_elements(!AUDIOMONITOR.Group.Lines) - 1) 
+			  	found_bool := TRUE
+			  	variableIdx := AUDIOMONITOR.Current.Groups[AUDIOMONITOR.i] - num_elements(!AUDIOMONITOR.Group.Markers)
+				AUDIOMONITOR.group := find_group(!AUDIOMONITOR.Group.Lines[variableIdx])	
+				if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 0
+					AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.1.Left // weird digit because of NI_BUS_OFFSET
+				else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 1 		
+				  	AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.1.Right
+				else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 2
+				  	AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.2.Left // weird digit because of NI_BUS_OFFSET
+				 else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 3
+				  	AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.2.Right	
+				else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 4
+				  	AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.3.Left // weird digit because of NI_BUS_OFFSET
+				else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 5
+				  	AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.3.Right
+				else if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 6 or  AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] = 7 // this is due to LIMITED NUMBERS OF BUS (0-15)
+					AUDIOMONITOR.out := AUDIOMONITOR.BUS.AuxSend.4.Left 
+				end if	
+				if AUDIOMONITOR.Current.Outputs[AUDIOMONITOR.i] mod 2 = 0 // left
+			  		AUDIOMONITOR.pan := 0
+			  	else 
+			  		AUDIOMONITOR.pan := 1000000
+			  	end if 
+			  	if AUDIOMONITOR.CONFIG.PRINT = 1
+					message(" TRIGGERED " & !AUDIOMONITOR.CONFIG.Groups[AUDIOMONITOR.Current.Groups[AUDIOMONITOR.i]] ... 
+				 	& " IN SECTION " & !AUDIOMONITOR.CONFIG.Events[AUDIOMONITOR.Current.Event] & " TO " & output_channel_name(AUDIOMONITOR.out - NI_BUS_OFFSET)) 
+				end if
+			  	set_engine_par(ENGINE_PAR_PAN, AUDIOMONITOR.pan, AUDIOMONITOR.group, -1, -1)
+			  	set_engine_par(ENGINE_PAR_OUTPUT_CHANNEL, AUDIOMONITOR.out, AUDIOMONITOR.group, -1, -1)
+			  	set_engine_par(ENGINE_PAR_VOLUME,AUDIOMONITOR.ENGPAR_0dB,AUDIOMONITOR.group,-1,-1)
+				AUDIOMONITOR.VariablesData[AUDIOMONITOR.Current.Variables[AUDIOMONITOR.i],4] := play_note(AUDIOMONITOR.midi, 127, 0, -1) // midi note 0 is where the marker is located by default		
+				AUDIOMONITOR.disallow_all_groups(AUDIOMONITOR.VariablesData[AUDIOMONITOR.Current.Variables[AUDIOMONITOR.i],4])
+				set_event_par_arr(AUDIOMONITOR.VariablesData[AUDIOMONITOR.Current.Variables[AUDIOMONITOR.i],4], EVENT_PAR_ALLOW_GROUP, 1, AUDIOMONITOR.group)
+				//AUDIOMONITOR.Line.LinearScale(AUDIOMONITOR.Current.Variables[AUDIOMONITOR.i])
+			end if
+		end for
+		if found_bool = FALSE and AUDIOMONITOR.CONFIG.PRINT = 1
+			message("	No Line found for this event")
+		end if
+	end function
+
+	function AUDIOMONITOR.Line.LinearScale(idx)
+		if AUDIOMONITOR.CONFIG.PRINT = 1
+			message("_-_-_-_-_- Function AUDIOMONITOR.Line.LinearScale -_-_-_-_-_")
+			message("idx: " & idx)
+			message("AUDIOMONITOR.VariablesData : value = " & AUDIOMONITOR.VariablesData[idx,0] & " , min = " & AUDIOMONITOR.VariablesData[idx,1] & " , max = " & AUDIOMONITOR.VariablesData[idx,2] & " , group = " & !AUDIOMONITOR.Group.Lines[AUDIOMONITOR.VariablesData[idx,3]]) // AUDIOMONITOR.VariablesData[varIdx][value, min, max, group]
+		end if
+		declare ~scaledVal_r 
+		declare scaledVal
+		if idx # -999 and idx # -1
+			~scaledVal_r := AUDIOMONITOR.scale(int_to_real(AUDIOMONITOR.VariablesData[idx,0]), int_to_real(AUDIOMONITOR.VariablesData[idx,1]), int_to_real(AUDIOMONITOR.VariablesData[idx,2]), -180000.0, 0.0)
+			message("scaled vol in millidB: " & ~scaledVal_r)
+			//scaledVal := real_to_int(pow(2.0, (~scaledVal_r + 346768.2342478351) / 18000.0))
+			
+			scaledVal := real_to_int(AUDIOMONITOR.atodb(AUDIOMONITOR.scale(int_to_real(AUDIOMONITOR.VariablesData[idx,0]), int_to_real(AUDIOMONITOR.VariablesData[idx,1]), int_to_real(AUDIOMONITOR.VariablesData[idx,2]), 0.0000001, 1.0)))
+			message("scale: " & AUDIOMONITOR.VariablesData[idx,0] & " , " & AUDIOMONITOR.VariablesData[idx,1] & " " & AUDIOMONITOR.VariablesData[idx,2] & " - 0 " & AUDIOMONITOR.ENGPAR_0dB)
+
+			AUDIOMONITOR.group := find_group(!AUDIOMONITOR.Group.Lines[AUDIOMONITOR.VariablesData[idx,3]])
+			if AUDIOMONITOR.CONFIG.PRINT = 1
+				message("Set volume to " & scaledVal)
+			end if
+			//set_engine_par(ENGINE_PAR_VOLUME,scaledVal,AUDIOMONITOR.group,-1,-1)
+			change_vol(AUDIOMONITOR.VariablesData[idx,4],scaledVal,0)
+		end if 
+	end function
+
+	function AUDIOMONITOR.Line.ExpScale(idx,expo)
+		if AUDIOMONITOR.CONFIG.PRINT = 1
+			message("_-_-_-_-_- Function AUDIOMONITOR.Line.ExpScale -_-_-_-_-_")
+		end if
+		declare ~scaled 
+		if idx # -999 and idx # -1
+			~scaled := AUDIOMONITOR.scale.exp(int_to_real(AUDIOMONITOR.VariablesData[idx,0]), int_to_real(AUDIOMONITOR.VariablesData[idx,1]), int_to_real(AUDIOMONITOR.VariablesData[idx,2]), 0, int_to_real(AUDIOMONITOR.ENGPAR_0dB), 1.0)	
+			AUDIOMONITOR.group := find_group(!AUDIOMONITOR.Group.Lines[AUDIOMONITOR.VariablesData[idx,3]])
+			set_engine_par(ENGINE_PAR_VOLUME,real_to_int(~scaled),AUDIOMONITOR.group,-1,-1)
+		end if 
+	end function
+
+	function AUDIOMONITOR.scale(v, a, b, c, d) -> return
+		return := (((((v)-(a)) * ((d)-(c)))/((b)-(a))) + (c))
+	end function
+
+	function AUDIOMONITOR.scale.exp(x, in_low, in_high, out_low, out_high, exponential) -> return
+		if (x-in_low)/(in_high-in_low) = 0.0 
+			return := out_low
+		else if (x-in_low)/(in_high-in_low) > 0.0
+			return := out_low + ((out_high-out_low) * pow((x-in_low)/(in_high-in_low),exponential))
+		else 
+			return := out_low + ((out_high-out_low) * (-1.0*pow((-1.0*x-in_low)/(in_high-in_low),exponential)))
+		end if
+	end function
+
+	function AUDIOMONITOR.disallow_all_groups(id)
+		declare i 
+		for i := 0 to NUM_GROUPS - 1
+			set_event_par_arr(id,EVENT_PAR_ALLOW_GROUP,0,i)
+		end for
+	end function
+
+	function AUDIOMONITOR.set_array(arr,val)
+		declare i 
+		for i := 0 to num_elements(arr) - 1	
+			arr[i] := val	
+		end for
+	end function 
+
+	function AUDIOMONITOR.set_2darray(arr,val)
+		declare i 
+		declare j
+		for i := 0 to arr.SIZE_D1 - 1
+			for j := 0 to arr.SIZE_D2 - 1
+				arr[i,j] := val	
+			end for 
+		end for
+	end function 
+
+	function AUDIOMONITOR.append(val,array,empty_sym)
+		array[search(array,empty_sym)] := val 
+	end function
+
+	function AUDIOMONITOR.atodb(a) -> return // ~amp to ~millidB
+		return := (20.0 * log(a) / 2.30258509299405) * 1000.0 // 2.30258509299405 => ~MATH_LN10
+	end function
+

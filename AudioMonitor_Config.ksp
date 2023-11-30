@@ -1,0 +1,50 @@
+define AUDIOMONITOR.CONFIG.PRINT := 1 
+define AUDIOMONITOR.CONFIG.maxITEMS := 8 
+define AUDIOMONITOR.CONFIG.maxVARS := 8 
+
+macro AUDIOMONITOR.Configuration
+	////////////////////////////////////
+	// Add Events - Conditions in your code which are going to trigger certain Groups
+	////////////////////////////////////
+	AUDIOMONITOR.CONFIG.ADD.Event("OFF" ,OFF)
+	AUDIOMONITOR.CONFIG.ADD.Event("ALWAYS" ,ALWAYS)
+	AUDIOMONITOR.CONFIG.ADD.Event("SVSYNC - VECTORSIZE" ,SVSYNC_VECTORSIZE)
+	AUDIOMONITOR.CONFIG.ADD.Event("SVSYNC - SYNCED" ,SVSYNC_SYNCED)
+	AUDIOMONITOR.CONFIG.ADD.Event("SVSYNC - UNSYNCED" ,SVSYNC_UNSYNCED)
+
+	////////////////////////////////////
+	// Add the Groups available to be triggered - These can be Markers , Lines, or Externals (groups that are actually active part of your Instrument)
+	////////////////////////////////////
+	AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - A" ,Marker_A)
+	AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - B" ,Marker_B)
+	AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - C" ,Marker_C)
+	AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - D" ,Marker_D)
+
+	AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE pos - A",Line_POS_A)
+	AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE pos - B",Line_POS_B)
+	AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE neg - A",Line_NEG_A)
+	AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE neg - B",Line_NEG_B)
+
+	AUDIOMONITOR.CONFIG.ADD.GroupExternal("Sound A",Sound_A)
+	AUDIOMONITOR.CONFIG.ADD.GroupExternal("Sound B",Sound_B)
+
+	////////////////////////////////////
+	// Add the Variables in your code whose value you might want to be displayed through a LINE group
+	////////////////////////////////////
+	AUDIOMONITOR.CONFIG.ADD.Variable("vectorTimer" ,SVSYNC.vectorTimer)
+	AUDIOMONITOR.CONFIG.ADD.Variable("vecCnt10" ,SVSYNC.vecCnt10)
+	AUDIOMONITOR.CONFIG.ADD.Variable("x" ,x)
+	AUDIOMONITOR.CONFIG.ADD.Variable("null" ,null)
+
+	////////////////////////////////////
+	// Add the Outputs that you want to be availale for routing the Audiomonitor Groups
+	////////////////////////////////////
+	AUDIOMONITOR.CONFIG.ADD.Output("AUX 1 - LEFT" ,Aux.1.Left)
+	AUDIOMONITOR.CONFIG.ADD.Output("AUX 1 - RIGHT" ,Aux.1.Right)
+	AUDIOMONITOR.CONFIG.ADD.Output("AUX 2 - LEFT" ,Aux.2.Left)
+	AUDIOMONITOR.CONFIG.ADD.Output("AUX 2 - RIGHT" ,Aux.2.Right)
+	AUDIOMONITOR.CONFIG.ADD.Output("AUX 3 - LEFT" ,Aux.3.Left)
+	AUDIOMONITOR.CONFIG.ADD.Output("AUX 3 - RIGHT" ,Aux.3.Right)
+	AUDIOMONITOR.CONFIG.ADD.Output("AUX 4 - LEFT" ,Aux.4.Left)
+	AUDIOMONITOR.CONFIG.ADD.Output("AUX 4 - RIGHT" ,Aux.4.Right)
+end macro

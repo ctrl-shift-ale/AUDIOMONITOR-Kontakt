@@ -1,0 +1,142 @@
+
+define LETTERS_8 := A, B, C, D, E, F, G, H 
+define LETTERS_4 := A, B , C, D 
+define LETTERS_2 := A, B 
+define AUDIOMONITOR.TYPE.Marker := 0 
+define AUDIOMONITOR.TYPE.Line := 1 
+define AUDIOMONITOR.TYPE.External := 2 
+
+define AUDIOMONITOR_ELEMENTSperITEM := 4 // event, group, variable, output
+define AUDIOMONITOR_PSG_ARRSIZE := AUDIOMONITOR.CONFIG.maxITEMS * AUDIOMONITOR_ELEMENTSperITEM
+define enum(#variable#) := AUDIOMONITOR.ENUM.#variable#
+
+define AUDIOMONITOR.Set.Variable.Val(#var_name#) := AUDIOMONITOR.VariablesData[AUDIOMONITOR.ENUM.#var_name#,0] :=  #var_name#
+define AUDIOMONITOR.Set.Variable.Min(#var_name# , #min#) := AUDIOMONITOR.VariablesData[AUDIOMONITOR.ENUM.#var_name#,1] :=  #min#
+define AUDIOMONITOR.Set.Variable.Max(#var_name# , #max#) := AUDIOMONITOR.VariablesData[AUDIOMONITOR.ENUM.#var_name#,2] :=  #max#
+
+import "AudioMonitor_CONFIG.ksp"
+
+macro AUDIOMONITOR.CONFIG.ADD.Event(#str#,#var#)
+	list_add(!AUDIOMONITOR.CONFIG.Events,#str#)
+	declare AUDIOMONITOR.ENUM.#var# := AUDIOMONITOR.Event_cnt
+	inc(AUDIOMONITOR.Event_cnt)
+end macro
+
+macro AUDIOMONITOR.CONFIG.ADD.GroupMarker(#str#,#var#)
+	list_add(!AUDIOMONITOR.Group.Markers,#str#)
+	inc(AUDIOMONITOR.Marker_cnt)
+	list_add(!AUDIOMONITOR.CONFIG.Groups,#str#)
+	declare AUDIOMONITOR.ENUM.#var# := AUDIOMONITOR.Group_cnt
+	inc(AUDIOMONITOR.Group_cnt)
+end macro
+
+macro AUDIOMONITOR.CONFIG.ADD.GroupLine(#str#,#var#)
+	list_add(!AUDIOMONITOR.Group.Lines,#str#)
+	inc(AUDIOMONITOR.Line_cnt)
+	list_add(!AUDIOMONITOR.CONFIG.Groups,#str#)
+	declare AUDIOMONITOR.ENUM.#var# := AUDIOMONITOR.Group_cnt
+	inc(AUDIOMONITOR.Group_cnt)
+end macro
+
+macro AUDIOMONITOR.CONFIG.ADD.GroupExternal(#str#,#var#)
+	list_add(!AUDIOMONITOR.Group.Externals,#str#)
+	inc(AUDIOMONITOR.External_cnt)
+	list_add(!AUDIOMONITOR.CONFIG.Groups,#str#)
+	declare AUDIOMONITOR.ENUM.#var# := AUDIOMONITOR.Group_cnt
+	inc(AUDIOMONITOR.Group_cnt)
+end macro
+
+macro AUDIOMONITOR.CONFIG.ADD.Variable(#str#,#var#)
+	list_add(!AUDIOMONITOR.CONFIG.Variables,#str#)
+	declare AUDIOMONITOR.ENUM.#var# := AUDIOMONITOR.Variable_cnt
+	inc(AUDIOMONITOR.Variable_cnt)
+end macro
+
+macro AUDIOMONITOR.CONFIG.ADD.Output(#str#,#var#)
+	list_add(!AUDIOMONITOR.CONFIG.Outputs,#str#)
+	declare AUDIOMONITOR.ENUM.#var# := AUDIOMONITOR.Output_cnt
+	inc(AUDIOMONITOR.Output_cnt)
+end macro
+
+macro AUDIOMONITOR.functions  
+	import "AudioMonitor_Functions.ksp"
+end macro 
+
+macro AUDIOMONITOR.init 
+	
+	declare AUDIOMONITOR.Event_cnt := 0 
+	declare AUDIOMONITOR.Group_cnt := 0
+	declare AUDIOMONITOR.Marker_cnt := 0
+	declare AUDIOMONITOR.Line_cnt := 9999
+	declare AUDIOMONITOR.External_cnt := 99999
+	declare AUDIOMONITOR.Variable_cnt := 0
+	declare AUDIOMONITOR.Output_cnt := 0
+
+	declare list !AUDIOMONITOR.CONFIG.Events[]
+	declare list !AUDIOMONITOR.CONFIG.Groups[]
+	declare list !AUDIOMONITOR.Group.Markers[]
+	declare list !AUDIOMONITOR.Group.Lines[]
+	declare list !AUDIOMONITOR.Group.Externals[]
+	declare list !AUDIOMONITOR.CONFIG.Variables[]
+	declare list !AUDIOMONITOR.CONFIG.Outputs[]
+
+	AUDIOMONITOR.Configuration
+
+	family AUDIOMONITOR  
+	 	declare const ENGPAR_0dB := 629961
+		declare const AUDIOMONITOR.PAN.Left := 0
+		declare const AUDIOMONITOR.PAN.Right := 1000000
+
+		declare Markers.BusOffset := NI_BUS_OFFSET + 7	
+		declare NoteHeld := 0 
+		declare midi := 0 // default midi position of audio sample in markers and line groups
+		declare group
+		declare id
+		declare out 
+		declare i
+		declare j
+		declare pan
+		family Psg // the data sent by the script AudioMonitor_UI 
+			declare Events[8] 
+			declare Groups[8]
+			declare Variables[8]
+			declare Outputs[8]
+		end family
+		family Current // The triggers under the current "event" 
+			declare Event 
+			declare Groups[8]
+			declare Variables[8]
+			declare Outputs[8]
+		end family
+
+		family BUS  
+			declare Main.Solo := NI_BUS_OFFSET 
+			declare AuxRtrn.1.Left := NI_BUS_OFFSET + 1
+			declare AuxRtrn.1.Right := NI_BUS_OFFSET + 2
+			declare AuxRtrn.2.Left := NI_BUS_OFFSET + 3
+			declare AuxRtrn.2.Right := NI_BUS_OFFSET + 4
+			declare AuxRtrn.3.Left := NI_BUS_OFFSET + 5
+			declare AuxRtrn.3.Right := NI_BUS_OFFSET + 6
+			declare AuxRtrn.4.Left := NI_BUS_OFFSET + 7
+			declare AuxRtrn.4.Right := NI_BUS_OFFSET + 8 //Main.Aux
+			declare AuxSend.1.Left := NI_BUS_OFFSET + 9
+			declare AuxSend.1.Right := NI_BUS_OFFSET + 9
+			declare AuxSend.2.Left := NI_BUS_OFFSET + 10
+			declare AuxSend.2.Right := NI_BUS_OFFSET + 10 //Aux
+			declare AuxSend.3.Left := NI_BUS_OFFSET + 11
+			declare AuxSend.3.Right := NI_BUS_OFFSET + 11
+			declare AuxSend.4.Left := NI_BUS_OFFSET + 12	
+
+			declare Default[512] // default bus configuration (to be used with audiomonitor) - the array must contain all the instrument's groups
+		end family
+	end family
+	declare AUDIOMONITOR.VariablesData[AUDIOMONITOR.CONFIG.maxVARS,5] // value, min, max, group, noteID
+	declare AUDIOMONITOR.VariablesData_his[AUDIOMONITOR.CONFIG.maxVARS] // value
+
+	for AUDIOMONITOR.i := 0 to AUDIOMONITOR.CONFIG.maxVARS - 1
+		for AUDIOMONITOR.j := 0 to 4
+			AUDIOMONITOR.VariablesData[AUDIOMONITOR.i,AUDIOMONITOR.j] := -1 // -> NULL	
+		end for 
+	end for
+
+end macro
