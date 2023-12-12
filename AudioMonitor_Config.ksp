@@ -1,40 +1,73 @@
-define AUDIOMONITOR.CONFIG.PRINT := 1 
-define AUDIOMONITOR.CONFIG.maxITEMS := 8 
-define AUDIOMONITOR.CONFIG.maxVARS := 8 
+define AUDIOMONITOR.CONFIG.PRINT := 1 // switch print to consolle mode on/off (for debugging purposes)
+define AUDIOMONITOR.CONFIG.maxITEMS := 8 // max amount of items
+define AUDIOMONITOR.CONFIG.maxVARS := 8 // max amount of variables monitored
 
 macro AUDIOMONITOR.Configuration
-	////////////////////////////////////
-	// Add Events - Conditions in your code which are going to trigger certain Groups
-	////////////////////////////////////
-	AUDIOMONITOR.CONFIG.ADD.Event("OFF" ,OFF)
-	AUDIOMONITOR.CONFIG.ADD.Event("ALWAYS" ,ALWAYS)
-	AUDIOMONITOR.CONFIG.ADD.Event("SVSYNC - VECTORSIZE" ,SVSYNC_VECTORSIZE)
-	AUDIOMONITOR.CONFIG.ADD.Event("SVSYNC - SYNCED" ,SVSYNC_SYNCED)
-	AUDIOMONITOR.CONFIG.ADD.Event("SVSYNC - UNSYNCED" ,SVSYNC_UNSYNCED)
 
-	////////////////////////////////////
-	// Add the Groups available to be triggered - These can be Markers , Lines, or Externals (groups that are actually active part of your Instrument)
-	////////////////////////////////////
-	AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - A" ,Marker_A)
-	AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - B" ,Marker_B)
-	AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - C" ,Marker_C)
-	AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - D" ,Marker_D)
+	// CONFIGURATION FOR AudioMonitor_DEMO_Basic.ksp
 
-	AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE pos - A",Line_POS_A)
-	AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE pos - B",Line_POS_B)
-	AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE neg - A",Line_NEG_A)
-	AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE neg - B",Line_NEG_B)
+		////////////////////////////////////
+		// Add Events - Conditions in your code which are going to trigger certain Groups
+		////////////////////////////////////
+		AUDIOMONITOR.CONFIG.ADD.Event("NEW NOTE" ,NEWNOTE) // 
+		AUDIOMONITOR.CONFIG.ADD.Event("SUM IS EVEN" ,EVEN)
+		AUDIOMONITOR.CONFIG.ADD.Event("SUM IS ODD" ,ODD)
 
-	AUDIOMONITOR.CONFIG.ADD.GroupExternal("Sound A",Sound_A)
-	AUDIOMONITOR.CONFIG.ADD.GroupExternal("Sound B",Sound_B)
+		////////////////////////////////////
+		// Add the Groups available to be triggered - These can be Markers , Lines, or Externals (groups that are actually active part of your Instrument)
+		////////////////////////////////////
+		AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - A" ,Marker_A)
+		AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - B" ,Marker_B)
+		AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - C" ,Marker_C)
+		AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - D" ,Marker_D)
 
-	////////////////////////////////////
-	// Add the Variables in your code whose value you might want to be displayed through a LINE group
-	////////////////////////////////////
-	AUDIOMONITOR.CONFIG.ADD.Variable("vectorTimer" ,SVSYNC.vectorTimer)
-	AUDIOMONITOR.CONFIG.ADD.Variable("vecCnt10" ,SVSYNC.vecCnt10)
-	AUDIOMONITOR.CONFIG.ADD.Variable("x" ,x)
-	AUDIOMONITOR.CONFIG.ADD.Variable("null" ,null)
+		AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE pos - A",Line_POS_A)
+		AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE pos - B",Line_POS_B)
+		AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE neg - A",Line_NEG_A)
+		AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE neg - B",Line_NEG_B)
+
+		//AUDIOMONITOR.CONFIG.ADD.GroupExternal("Sound A",Sound_A)
+
+		////////////////////////////////////
+		// Add the Variables in your code whose value you might want to be displayed through a LINE group
+		////////////////////////////////////
+		AUDIOMONITOR.CONFIG.ADD.Variable("a" ,a)
+		AUDIOMONITOR.CONFIG.ADD.Variable("b" ,b)
+		AUDIOMONITOR.CONFIG.ADD.Variable("sum" ,sum)
+		
+	/*
+	// CONFIGURATION FOR AudioMonitor_DEMO_SigVecSync.ksp
+
+		////////////////////////////////////
+		// Add Events - Conditions in your code which are going to trigger certain Groups
+		////////////////////////////////////
+		AUDIOMONITOR.CONFIG.ADD.Event("OFF" ,OFF) // 
+		AUDIOMONITOR.CONFIG.ADD.Event("SVSYNC - VECTORSIZE" ,SVSYNC_VECTORSIZE)
+		AUDIOMONITOR.CONFIG.ADD.Event("SVSYNC - SYNCED" ,SVSYNC_SYNCED)
+		AUDIOMONITOR.CONFIG.ADD.Event("SVSYNC - UNSYNCED" ,SVSYNC_UNSYNCED)
+
+		////////////////////////////////////
+		// Add the Groups available to be triggered - These can be Markers , Lines, or Externals (groups that are actually active part of your Instrument)
+		////////////////////////////////////
+		AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - A" ,Marker_A)
+		AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - B" ,Marker_B)
+		AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - C" ,Marker_C)
+		AUDIOMONITOR.CONFIG.ADD.GroupMarker("MARKER - D" ,Marker_D)
+
+		AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE pos - A",Line_POS_A)
+		AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE pos - B",Line_POS_B)
+		AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE neg - A",Line_NEG_A)
+		AUDIOMONITOR.CONFIG.ADD.GroupLine("LINE neg - B",Line_NEG_B)
+
+		AUDIOMONITOR.CONFIG.ADD.GroupExternal("Sound A",Sound_A)
+		AUDIOMONITOR.CONFIG.ADD.GroupExternal("Sound B",Sound_B)
+
+		////////////////////////////////////
+		// Add the Variables in your code whose value you might want to be displayed through a LINE group
+		////////////////////////////////////
+		AUDIOMONITOR.CONFIG.ADD.Variable("vectorTimer" ,SVSYNC.vectorTimer)
+		AUDIOMONITOR.CONFIG.ADD.Variable("vecCnt10" ,SVSYNC.vecCnt10)
+		*/
 
 	////////////////////////////////////
 	// Add the Outputs that you want to be availale for routing the Audiomonitor Groups
