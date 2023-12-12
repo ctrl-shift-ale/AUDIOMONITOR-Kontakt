@@ -1,0 +1,108 @@
+///////////////////////////////////////////////////////////////
+// SCRIPT USER SETUP
+///////////////////////////////////////////////////////////////
+
+define AUDIOMONITOR.active := 1 // 1 -> TRUE , 0 -> FALSE
+
+define rndIntMin := 0
+define rndIntMax := 9
+define freq := 1 // frequency (times per second) of random values refresh
+
+///////////////////////////////////////////////////////////////
+
+import "AudioMonitor_Shared.ksp"
+
+on init 
+
+	AUDIOMONITOR.init // !!! !!! !!!
+
+	///////////////////////////////////////////////////////////////
+	// ENUM VARIABLES
+	declare const STATE.NEWNOTE := 0 
+	declare const STATE.SUM_EVEN := 1 
+	declare const STATE.SUM_ODD := 2
+
+	declare const NULL_ := -1
+	declare const ON_ := 1
+	declare const SEC_ := 1000000
+	///////////////////////////////////////////////////////////////
+
+	declare a := 0
+	AUDIOMONITOR.Set.Variable.Min(a, rndIntMin)
+	AUDIOMONITOR.Set.Variable.Max(a, rndIntMax)
+	declare b := 0
+	AUDIOMONITOR.Set.Variable.Min(b, rndIntMin)
+	AUDIOMONITOR.Set.Variable.Max(b, rndIntMax)
+
+	declare sum := 0
+	AUDIOMONITOR.Set.Variable.Min(sum, rndIntMin*2)
+	AUDIOMONITOR.Set.Variable.Max(sum, rndIntMax*2)
+
+	declare cycleDur // this determines the duration of the wait() statement at the end of the NOTE_HELD while loop
+	if freq <= 0
+		cycleDur := SEC_ 
+	else
+		cycleDur := SEC_ / freq
+	end if 
+	if cycleDur <= 0 
+		cycleDur := SEC_ 
+	end if
+
+	declare state
+	declare state.his 
+
+end on 
+
+on note 
+	// INIT
+	state := STATE.NEWNOTE
+	state.his := NULL_
+	////////////////////////////
+	// AUDIOMONITOR
+	// add the following line whenever a change of status might require AUDIOMONITOR to check whether something needs to be triggered
+	AUDIOMONITOR.Event.Check(state)
+	//\\\\\\\\\\\\\\\\\\\\\\\\\
+
+	while NOTE_HELD = ON_ 
+		a := random(rndIntMin, rndIntMax)	
+		b := random(rndIntMin, rndIntMax)	
+		sum := a + b
+
+		////////////////////////////
+		// AUDIOMONITOR
+		// UPDATE THE VALUE OF THE VARIABLES OF INTEREST
+		AUDIOMONITOR.Set.Variable.Val(a)
+		AUDIOMONITOR.Set.Variable.Val(b)
+		AUDIOMONITOR.Set.Variable.Val(sum)
+		//\\\\\\\\\\\\\\\\\\\\\\\\\
+
+		if sum mod 2 = 0 
+			state := STATE.SUM_EVEN
+		else 
+			state := STATE.SUM_ODD
+		end if
+
+		////////////////////////////
+		// AUDIOMONITOR
+		// add the following block whenever a change of status might require AUDIOMONITOR to check whether something needs to be triggered
+		if state.his # state // if it's the master note and a change of status happened in this NOTE_HELD loop
+			AUDIOMONITOR.Event.Check(state)
+		end if
+		//\\\\\\\\\\\\\\\\\\\\\\\\\
+		state.his := state
+
+		///////////////////////////
+		// AUDIOMONITOR
+		// This block has to be added to the NOTE_HELD loop only if there are variables that AUDIOMONITOR monitors
+		AUDIOMONITOR.NoteHeld.Check()
+		//\\\\\\\\\\\\\\\\\\\\\\\\\
+
+		wait(cycleDur)		
+	end while 
+end on  
+
+on pgs_changed 	
+	AUDIOMONITOR.pgs // !!! !!! !!!
+end on
+
+AUDIOMONITOR.functions // !!! !!! !!!
